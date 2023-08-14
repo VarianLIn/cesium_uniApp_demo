@@ -10,6 +10,9 @@
 </template>
 
 <script module="Cesium" lang="renderjs">
+	import {
+		CONFIG
+	} from 'static/config_url.js';
 	export default {
 		data() {
 			return {
@@ -82,24 +85,103 @@
 				this.viewer._cesiumWidget._creditContainer.style.display = 'none'; //隐藏版本信息
 				this.viewer.scene.debugShowFramesPerSecond = true; // 显示帧数
 
+				this.guiInit()
+			},
+			// gui初始化
+			guiInit() {
+				// gui窗口配置
+				let guiOptions = {
+					name: '3dTiles地址',
+					value: [],
+					namelist: []
+				};
+				for (let item in CONFIG) {
+					guiOptions.value.push({
+						name: item,
+						value: CONFIG[item]
+					});
+					guiOptions.namelist.push(item);
+				}
 
+				// gui窗口
+				const gui = new dat.GUI();
+				gui.domElement.style.position = 'absolute';
+				gui.domElement.style.left = '10px';
+
+				// #ifdef H5
+				gui.domElement.style.top = '45px';
+				// #endif
+				// #ifdef APP-PLUS 
+				gui.domElement.style.top = '0';
+				// #endif
+
+				let f = gui.addFolder('三维模型');
+				let changeEvent = f.add(guiOptions, 'name', guiOptions.namelist);
+				let heightChange = f.add({
+					height: this.moduleHeight
+				}, 'height', -200, 200);
+				f.open();
+
+
+				// 模型切换
+				changeEvent.onChange((value) => {
+					guiOptions.value.forEach((item, index) => {
+						if (item.name === value) {
+							this.add3dTiels(item.value);
+						} else {
+							return;
+						}
+					});
+				});
+
+				// 模型高度调节
+				heightChange.onChange((h) => {
+					this.moduleHeight = h
+					this.moduleHeightChange(this.tilesetData, h);
+				});
+			},
+			// 添加3dtiles数据
+			add3dTiels(url) {
+				if (this.tilesetData) {
+					this.removeData()
+				} else if (!this.tilesetData) {
+					// return;
+				}
 				// 请求3dtiles数据
 				this.tilesetData = new Cesium.Cesium3DTileset({
-					url: 'http://localhost:9099/wuhan_baimo/tileset.json'
+					url: url
 				});
 
 				// 数据请求完成后加载
 				this.tilesetData.readyPromise
 					.then((tileset) => {
 						this.viewer && this.viewer.scene.primitives.add(tileset);
+						this.moduleHeightChange(tileset, this.moduleHeight);
 						this.viewer.zoomTo(tileset);
 					})
 					.otherwise(function(error) {
 						console.log(error);
 					});
 			},
+			// 模型高度调整
+			moduleHeightChange(tileset, height) {
+				var cartographic = Cesium.Cartographic.fromCartesian(tileset.boundingSphere.center);
+				var surface = Cesium.Cartesian3.fromRadians(cartographic.longitude, cartographic.latitude, 0.0);
+				var offset = Cesium.Cartesian3.fromRadians(cartographic.longitude, cartographic.latitude, height);
+				var translation = Cesium.Cartesian3.subtract(offset, surface, new Cesium.Cartesian3());
+				tileset.modelMatrix = Cesium.Matrix4.fromTranslation(translation);
+			},
+			// 移除模型数据
+			removeData() {
+				if (this.tilesetData) {
+					this.tilesetData.destroy();
+					this.tilesetData = null;
+				}
+			}
+
 		},
 		beforeDestroy() {
+			this.removeData()
 			this.removeResource()
 		}
 	}
